@@ -1,0 +1,140 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function currentUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && currentUserDoc().data.role == 'admin';
+    }
+
+    function isDoctor() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && currentUserDoc().data.role == 'doctor';
+    }
+
+    function isPatient() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && currentUserDoc().data.role == 'patient';
+    }
+
+    function allowUserProfileCreate(userId) {
+      return isOwner(userId)
+        && request.resource.data.keys().hasOnly([
+          'email',
+          'displayName',
+          'phone',
+          'childName',
+          'age',
+          'address',
+          'role',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.role == 'patient';
+    }
+
+    function allowUserProfileUpdate(userId) {
+      return isOwner(userId)
+        && request.resource.data.keys().hasOnly([
+          'email',
+          'displayName',
+          'phone',
+          'childName',
+          'age',
+          'address',
+          'role',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.role == resource.data.role;
+    }
+
+    match /users/{userId} {
+      // Doctors can read patient profiles, but cannot edit them.
+      allow read: if isOwner(userId)
+        || isAdmin()
+        || (isDoctor() && resource.data.role == 'patient');
+      allow create: if allowUserProfileCreate(userId);
+      allow update: if allowUserProfileUpdate(userId) || isAdmin();
+      allow delete: if isAdmin();
+
+      // App currently writes appointments in users/{uid}/appointments/{id}
+      match /appointments/{appointmentId} {
+        allow read, create, update, delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /symptomLogs/{logId} {
+        allow read, create: if isOwner(userId) || isAdmin();
+        allow update, delete: if isAdmin();
+      }
+
+      match /medicalRecords/{recordId} {
+        allow read: if isOwner(userId) || isDoctor() || isAdmin();
+        allow create, update: if isDoctor() || isAdmin();
+        allow delete: if isAdmin();
+      }
+    }
+
+    match /doctors/{doctorId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Optional global collection style if you later move appointments out of user subcollection
+    match /appointments/{appointmentId} {
+      allow create: if signedIn();
+      allow read: if signedIn()
+        && (resource.data.patientId == request.auth.uid
+          || resource.data.doctorId == request.auth.uid
+          || isAdmin());
+      // Assigned doctors can update appointment workflow; admin retains full control.
+      allow update: if isAdmin()
+        || (isDoctor() && resource.data.doctorId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // Doctor-only workspace notes/case files.
+    match /doctorCases/{caseId} {
+      allow create: if isDoctor() || isAdmin();
+      allow read: if isAdmin()
+        || (isDoctor() && resource.data.doctorId == request.auth.uid)
+        || (isPatient() && resource.data.patientId == request.auth.uid);
+      allow update: if isAdmin()
+        || (isDoctor() && resource.data.doctorId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // Optional chat collection. Locked to participants/admin.
+    match /chats/{chatId} {
+      allow create: if signedIn();
+      allow read, update, delete: if signedIn()
+        && (request.auth.uid in resource.data.participants || isAdmin());
+
+      match /messages/{messageId} {
+        allow create: if signedIn();
+        allow read: if signedIn()
+          && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+            || isAdmin());
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
