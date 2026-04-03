@@ -1,4 +1,8 @@
-import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import {
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db, hasFirebaseConfig } from "./firebase";
 
@@ -8,9 +12,9 @@ const ALLOW_DEMO_LOGIN =
   String(import.meta.env.VITE_ALLOW_DEMO_LOGIN ?? "true").toLowerCase() ===
   "true";
 const DEMO_EMAIL = (
-  import.meta.env.VITE_DEMO_EMAIL ?? "demo@medvision.app"
+  import.meta.env.VITE_DEMO_EMAIL ?? "patient@demo.in"
 ).toLowerCase();
-const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD ?? "Demo@123";
+const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD ?? "demo123";
 const DOCTOR_DEMO_EMAIL = (
   import.meta.env.VITE_DOCTOR_DEMO_EMAIL ?? "doctor@demo.in"
 ).toLowerCase();
@@ -81,13 +85,13 @@ export const loginWithEmail = async (email, password) => {
 
   if (
     ALLOW_DEMO_LOGIN &&
-    normalizedEmail === DEMO_EMAIL &&
+    (normalizedEmail === DEMO_EMAIL || normalizedEmail === DOCTOR_DEMO_EMAIL) &&
     password === DEMO_PASSWORD
   ) {
     const user = {
       uid: "demo-local-user",
-      email: DEMO_EMAIL,
-      displayName: "Demo User",
+      email: normalizedEmail,
+      displayName: getDisplayNameFromEmail(normalizedEmail),
       loggedInAt: new Date().toISOString(),
       isDemoUser: true,
     };
@@ -164,6 +168,44 @@ export const resolveUserRole = async (user) => {
   }
 };
 
+export const getUserProfile = async (user) => {
+  const normalizedEmail = user?.email?.trim()?.toLowerCase?.() ?? "";
+
+  if (user?.isDemoUser) {
+    return {
+      role: getRoleFromDemoEmail(normalizedEmail),
+      verified: true,
+    };
+  }
+
+  if (!db || !user?.uid) {
+    return null;
+  }
+
+  try {
+    const snapshot = await getDoc(doc(db, "users", user.uid));
+    if (!snapshot.exists()) {
+      return null;
+    }
+
+    const data = snapshot.data() ?? {};
+    const role =
+      typeof data.role === "string" ? data.role.trim().toLowerCase() : null;
+    const verified = typeof data.verified === "boolean" ? data.verified : null;
+
+    if (!role) {
+      return null;
+    }
+
+    return {
+      role,
+      verified,
+    };
+  } catch {
+    return null;
+  }
+};
+
 export const logoutUser = async () => {
   if (auth) {
     await signOut(auth);
@@ -180,10 +222,7 @@ export const resetPasswordWithEmail = async (email) => {
     throw new Error("INVALID_EMAIL");
   }
 
-  if (
-    ALLOW_DEMO_LOGIN &&
-    normalizedEmail === DEMO_EMAIL
-  ) {
+  if (ALLOW_DEMO_LOGIN && normalizedEmail === DEMO_EMAIL) {
     return true;
   }
 

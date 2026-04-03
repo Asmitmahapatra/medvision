@@ -77,10 +77,51 @@ const PatientDashboard = ({ copy, language }) => {
   const [actionMessage, setActionMessage] = useState('');
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
-  const [selectedDepartment, setSelectedDepartment] = useState('All departments');
+  const [selectedDoctorId, setSelectedDoctorId] = useState('');
+  const [preferredDate, setPreferredDate] = useState(
+    new Date().toISOString().split('T')[0]
+  );
   const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [emergencyConfirmed, setEmergencyConfirmed] = useState(false);
   const [isCalling, setIsCalling] = useState(false);
+  const [chatPreview, setChatPreview] = useState([]);
+
+  const quickChatPrompts = useMemo(() => (
+    language === 'hi'
+      ? ['बुखार में क्या खाएं?', 'खांसी के लिए क्या करें?', 'ORS कब लेना चाहिए?']
+      : ['What should I eat with fever?', 'What should I do for cough?', 'When should I take ORS?']
+  ), [language]);
+
+  const handleOpenChat = () => {
+    navigate('/health-chat');
+  };
+
+  useEffect(() => {
+    const readPreview = () => {
+      if (globalThis.localStorage === undefined) {
+        return;
+      }
+
+      try {
+        const raw = globalThis.localStorage.getItem('medvision-chat-history');
+        const parsed = raw ? JSON.parse(raw) : [];
+        setChatPreview(Array.isArray(parsed) ? parsed.slice(-3) : []);
+      } catch {
+        setChatPreview([]);
+      }
+    };
+
+    readPreview();
+    const handleStorage = (event) => {
+      if (event.key === 'medvision-chat-history') {
+        readPreview();
+      }
+    };
+    globalThis.addEventListener?.('storage', handleStorage);
+    return () => {
+      globalThis.removeEventListener?.('storage', handleStorage);
+    };
+  }, []);
 
   const handleEmergencyCall = async () => {
     setIsCalling(true);
@@ -149,11 +190,16 @@ const PatientDashboard = ({ copy, language }) => {
     setIsChecking(false);
   };
 
-  const handleBookDoctor = async (department) => {
+  const handleBookDoctor = async () => {
+    if (!selectedDoctorId || !preferredDate) {
+      return;
+    }
+
     setIsBooking(true);
-    const created = await bookAppointment(department, copy);
+    const doctor = DOCTOR_DIRECTORY.find((doc) => doc.id === selectedDoctorId);
+    const created = await bookAppointment(doctor?.department ?? 'General Medicine', copy);
     setAppointments((prev) => [created, ...prev]);
-    setActionMessage(copy.patient.bookSuccess.replace('{department}', department));
+    setActionMessage(copy.patient.bookSuccess.replace('{department}', doctor?.department ?? 'General Medicine'));
     setIsBooking(false);
   };
 
@@ -169,16 +215,9 @@ const PatientDashboard = ({ copy, language }) => {
     setIsRescheduling(false);
   };
 
-  const doctorDepartments = useMemo(
-    () => ['All departments', ...new Set(DOCTOR_DIRECTORY.map((doctor) => doctor.department))],
-    [],
-  );
-
-  const filteredDoctors = useMemo(
-    () => DOCTOR_DIRECTORY.filter((doctor) => (
-      selectedDepartment === 'All departments' || doctor.department === selectedDepartment
-    )),
-    [selectedDepartment],
+  const selectedDoctor = useMemo(
+    () => DOCTOR_DIRECTORY.find((doctor) => doctor.id === selectedDoctorId),
+    [selectedDoctorId],
   );
 
   let resultsBlock = null;
@@ -282,55 +321,66 @@ const PatientDashboard = ({ copy, language }) => {
             </article>
 
             <article className="rounded-3xl border border-indigo-100 bg-white p-5 shadow-md md:p-6">
-              <h4 className="text-3xl font-black text-slate-700">{copy.patient.bookTitle}</h4>
-              <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <p className="max-w-xl text-sm text-gray-500">Choose a department first, then pick a doctor who is available in your language.</p>
-                <select
-                  value={selectedDepartment}
-                  onChange={(event) => setSelectedDepartment(event.target.value)}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                >
-                  {doctorDepartments.map((department) => (
-                    <option key={department} value={department}>{department}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {filteredDoctors.map((doctor) => (
-                  <button
-                    key={doctor.id}
-                    onClick={() => handleBookDoctor(doctor.department)}
-                    disabled={isBooking}
-                    className="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50 disabled:opacity-75"
+              <h4 className="text-3xl font-black text-slate-700">Appointment booking</h4>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700" htmlFor="booking-doctor">
+                    Doctor
+                  </label>
+                  <select
+                    id="booking-doctor"
+                    value={selectedDoctorId}
+                    onChange={(event) => setSelectedDoctorId(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-2xl font-black text-slate-800">{doctor.name}</p>
-                        <p className="text-sm font-bold text-teal-700">{doctor.department}</p>
-                      </div>
-                      <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">{doctor.experience}</span>
-                    </div>
+                    <option value="">Select a doctor</option>
+                    {DOCTOR_DIRECTORY.map((doctor) => (
+                      <option key={doctor.id} value={doctor.id}>{doctor.name}</option>
+                    ))}
+                  </select>
+                </div>
 
-                    <div className="mt-3 space-y-1 text-sm text-slate-700">
-                      <p><span className="font-bold text-slate-800">Hospital:</span> {doctor.hospital}</p>
-                      <p><span className="font-bold text-slate-800">Availability:</span> {doctor.availability}</p>
-                      <p><span className="font-bold text-slate-800">Languages:</span> {doctor.languages}</p>
-                    </div>
-
-                    <div className="mt-4 flex items-center justify-between">
-                      <p className="text-xs font-bold tracking-[0.2em] text-slate-500">{doctor.phone}</p>
-                      <span className="rounded-full bg-teal-700 px-5 py-2 text-sm font-black text-white">Book</span>
-                    </div>
-                  </button>
-                ))}
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700" htmlFor="booking-date">
+                    Preferred date
+                  </label>
+                  <input
+                    id="booking-date"
+                    type="date"
+                    value={preferredDate}
+                    onChange={(event) => setPreferredDate(event.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
               </div>
-              {isBooking && (
-                <p className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700">
-                  <Loader2 size={14} className="animate-spin" />
-                  {copy.patient.bookingInProgress}
+
+              <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+                <div className="flex gap-3">
+                  <AlertTriangle size={18} className="shrink-0 text-indigo-600" />
+                  <div className="text-xs text-indigo-900">
+                    <p className="font-bold tracking-[0.2em]">AI REMINDER</p>
+                    <p className="mt-1">
+                      Run symptom analysis first so the doctor sees the AI suggestion.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleBookDoctor}
+                disabled={!selectedDoctorId || !preferredDate || isBooking}
+                className="mt-5 w-full rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 px-6 py-4 text-base font-bold text-white transition hover:from-amber-600 hover:to-orange-700 disabled:cursor-not-allowed disabled:from-gray-400 disabled:to-gray-400"
+              >
+                {isBooking ? 'Confirming booking...' : 'Confirm booking'}
+              </button>
+
+              {selectedDoctor && (
+                <p className="mt-3 text-xs font-semibold text-slate-500">
+                  {selectedDoctor.department} · {selectedDoctor.availability}
                 </p>
               )}
+
               {actionMessage && !isBooking && (
                 <p className="mt-3 text-xs font-semibold text-emerald-700">{actionMessage}</p>
               )}
@@ -361,52 +411,23 @@ const PatientDashboard = ({ copy, language }) => {
             </article>
 
             <article className="rounded-3xl border border-indigo-100 bg-white p-5 shadow-md md:p-6">
-              <h4 className="text-3xl font-black text-slate-700">Records</h4>
-              <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-2xl font-black text-slate-800">Mild viral infection</p>
-                    <p className="text-lg font-bold text-teal-700">Dr. Meera Rao · General Medicine</p>
-                  </div>
-                  <p className="text-sm font-bold text-slate-500">28/3/2026</p>
-                </div>
-
-                <div className="mt-4 grid gap-3 rounded-3xl bg-[#edf2ee] p-4 md:grid-cols-2">
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-500">Symptoms</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-800">Cough and mild fever</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-500">Prescription</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-800">Rest, warm fluids, paracetamol after food if fever is present</p>
-                  </div>
-                </div>
-              </div>
-            </article>
-
-            <article className="rounded-3xl border border-indigo-100 bg-white p-5 shadow-md md:p-6">
-              <h4 className="text-3xl font-black text-slate-700">{copy.patient.appointmentsTitle}</h4>
+              <h4 className="text-3xl font-black text-slate-700">Appointments</h4>
               {appointments.length === 0 ? (
                 <p className="mt-4 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 text-xs font-semibold text-gray-500">
                   {copy.patient.noAppointments}
                 </p>
               ) : (
-                <div className="mt-4 space-y-3">
-                  {appointments.slice(0, 3).map((appointment) => (
-                    <div key={appointment.id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
-                      <div className="flex items-center justify-between">
-                        <p className="font-semibold text-gray-800">{appointment.doctor}</p>
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">
-                          {appointment.status}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-gray-500">{appointment.speciality}</p>
-                      <p className="mt-2 text-xs text-gray-600">{appointment.notes}</p>
-                      <p className="mt-1 text-[11px] font-semibold text-indigo-700">
-                        {`${copy.patient.scheduledAt}: ${new Date(appointment.scheduledAt).toLocaleString()}`}
-                      </p>
+                <div className="mt-4 rounded-3xl border border-gray-200 bg-[#f7f8f5] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-2xl font-black text-slate-800">{appointments[0].doctor}</p>
+                      <p className="text-sm font-bold text-teal-700">{appointments[0].speciality}</p>
                     </div>
-                  ))}
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-bold tracking-[0.2em] text-slate-500">
+                      {appointments[0].status}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-700">{appointments[0].notes}</p>
                 </div>
               )}
               <div className="mt-4 grid grid-cols-2 gap-2">
@@ -423,6 +444,114 @@ const PatientDashboard = ({ copy, language }) => {
                   {copy.patient.chatDoctor}
                 </button>
               </div>
+            </article>
+
+            <article className="rounded-3xl border border-indigo-100 bg-white p-5 shadow-md md:p-6">
+              <h4 className="text-3xl font-black text-slate-700">Records</h4>
+              <div className="mt-4 rounded-3xl border border-gray-200 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-2xl font-black text-slate-800">Mild viral infection</p>
+                    <p className="text-sm font-bold text-teal-700">Dr. Meera Rao · General Medicine</p>
+                  </div>
+                  <p className="text-sm font-bold text-slate-500">28/3/2026</p>
+                </div>
+
+                <div className="mt-4 grid gap-3 rounded-3xl bg-[#f6f6ee] p-4 md:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-500">Symptoms</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-800">Cough and mild fever</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-500">Prescription</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-800">Rest, warm fluids, paracetamol after food if fever is present</p>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article className="rounded-3xl border border-indigo-100 bg-white p-5 shadow-md md:p-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-3xl font-black text-slate-700">Multilingual Health Chat</h4>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Use it for simple questions, preventive advice, and next-step guidance.
+                  </p>
+                </div>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                  {language === 'hi' ? 'हिंदी' : 'ENGLISH'}
+                </span>
+              </div>
+
+              <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                <div className="space-y-3">
+                  {chatPreview.length > 0 ? (
+                    chatPreview.map((message, index) => (
+                      <div
+                        key={`${message.sender}-${index}`}
+                        className={`rounded-2xl px-4 py-3 text-sm ${
+                          message.sender === 'user'
+                            ? 'bg-teal-700 text-white'
+                            : 'bg-white text-slate-700'
+                        }`}
+                      >
+                        {message.text}
+                      </div>
+                    ))
+                  ) : (
+                    <>
+                      <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-700">
+                        {language === 'hi'
+                          ? 'नमस्ते! मैं सामान्य स्वास्थ्य जानकारी में मदद कर सकता हूँ।'
+                          : 'Hello! I can help with basic health guidance.'}
+                      </div>
+                      <div className="rounded-2xl bg-teal-700 px-4 py-3 text-sm text-white">
+                        {language === 'hi' ? 'खांसी के लिए क्या करें?' : 'What should I do for cough?'}
+                      </div>
+                      <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-700">
+                        {language === 'hi'
+                          ? 'आराम करें, पानी पिएं, और लक्षण बढ़ें तो डॉक्टर से मिलें।'
+                          : 'Rest, drink water, and consult a doctor if symptoms worsen.'}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {quickChatPrompts.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={handleOpenChat}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 flex gap-3">
+                <input
+                  type="text"
+                  disabled
+                  placeholder={language === 'hi' ? 'अपना सवाल लिखें...' : 'Type your question...'}
+                  className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleOpenChat}
+                  className="rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 px-5 py-2 text-sm font-bold text-white transition hover:from-amber-600 hover:to-orange-700"
+                >
+                  Send
+                </button>
+              </div>
+
+              <p className="mt-3 text-xs text-slate-500">
+                {language === 'hi'
+                  ? 'यह चैट केवल सामान्य जानकारी के लिए है।'
+                  : 'This chat is for basic guidance only.'}
+              </p>
             </article>
           </aside>
         </div>
@@ -450,7 +579,37 @@ const PatientDashboard = ({ copy, language }) => {
               <X size={20} />
             </button>
 
-            {!emergencyConfirmed ? (
+            {emergencyConfirmed ? (
+              <>
+                {/* Success State */}
+                <div className="space-y-6 p-8">
+                  <div className="flex items-center justify-center">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+                      <CheckCircle2 size={32} className="text-emerald-600" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-center">
+                    <h2 className="text-3xl font-black text-emerald-700">Emergency Alert Sent</h2>
+                    <p className="text-sm text-gray-600">
+                      Emergency services have been notified. Help is on the way.
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-emerald-50 p-4">
+                    <div className="space-y-2 text-sm text-emerald-900">
+                      <p className="font-bold">✓ Ambulance dispatched</p>
+                      <p>✓ Your location shared</p>
+                      <p>✓ Medical profile sent</p>
+                    </div>
+                  </div>
+
+                  <p className="text-center text-xs text-gray-500">
+                    Closing in a moment...
+                  </p>
+                </div>
+              </>
+            ) : (
               <>
                 {/* Emergency Request Content */}
                 <div className="space-y-6 p-8">
@@ -503,36 +662,6 @@ const PatientDashboard = ({ copy, language }) => {
                       Cancel
                     </button>
                   </div>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Success State */}
-                <div className="space-y-6 p-8">
-                  <div className="flex items-center justify-center">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
-                      <CheckCircle2 size={32} className="text-emerald-600" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 text-center">
-                    <h2 className="text-3xl font-black text-emerald-700">Emergency Alert Sent</h2>
-                    <p className="text-sm text-gray-600">
-                      Emergency services have been notified. Help is on the way.
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl bg-emerald-50 p-4">
-                    <div className="space-y-2 text-sm text-emerald-900">
-                      <p className="font-bold">✓ Ambulance dispatched</p>
-                      <p>✓ Your location shared</p>
-                      <p>✓ Medical profile sent</p>
-                    </div>
-                  </div>
-
-                  <p className="text-center text-xs text-gray-500">
-                    Closing in a moment...
-                  </p>
                 </div>
               </>
             )}

@@ -1,0 +1,99 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // ============================================
+    // AUTHENTICATION HELPERS
+    // ============================================
+    
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    // ============================================
+    // FILE SIZE & TYPE VALIDATION
+    // ============================================
+
+    function isValidMedicalDocument() {
+      // Allow images and PDFs up to 10MB
+      return request.resource.size <= 10 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+          || request.resource.contentType == 'application/pdf');
+    }
+
+    function isValidChatFile() {
+      // Allow images and documents up to 5MB
+      return request.resource.size <= 5 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+          || request.resource.contentType == 'application/pdf'
+          || request.resource.contentType.matches('text/.*'));
+    }
+
+    // ============================================
+    // MEDICAL RECORDS STORAGE
+    // ============================================
+
+    match /medicalRecords/{userId}/{fileName} {
+      // Users can upload/read their own medical records
+      allow read, write: if isOwner(userId) && isValidMedicalDocument();
+    }
+
+    // ============================================
+    // CHAT FILES STORAGE
+    // ============================================
+
+    match /chatFiles/{userId}/{fileName} {
+      // Users can upload/read their own chat files
+      allow read, write: if isOwner(userId) && isValidChatFile();
+    }
+
+    // ============================================
+    // USER PROFILE PICTURES
+    // ============================================
+
+    match /profilePictures/{userId}/avatar.{ext} {
+      // Users can upload/read their own profile picture
+      allow read, write: if isOwner(userId)
+        && request.resource.size <= 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // ============================================
+    // PRESCRIPTION DOCUMENTS
+    // ============================================
+
+    match /prescriptions/{userId}/{prescriptionId}.pdf {
+      // Users can read their prescriptions
+      allow read: if isOwner(userId);
+      // Doctors can upload prescriptions for patients
+      allow write: if signedIn()
+        && isValidMedicalDocument();
+    }
+
+    // ============================================
+    // TEMPORARY UPLOADS
+    // ============================================
+
+    match /temp/{fileName} {
+      // Allow any signed-in user to upload temporary files
+      allow write: if signedIn()
+        && request.resource.size <= 5 * 1024 * 1024;
+      // Only allow reading your own temp files
+      allow read: if signedIn();
+    }
+
+    // ============================================
+    // DEFAULT DENY - SECURITY FIRST
+    // ============================================
+
+    // Deny all other access by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

@@ -144,9 +144,12 @@ export const translations = {
         "Firebase is not configured. Add VITE_FIREBASE_* values.",
       doctorOnlyError: "This account is not a doctor account.",
       patientOnlyError: "This account is not a patient account.",
+      doctorPendingApproval:
+        "Doctor account pending approval. Please wait for verification.",
       roleMissing: "Account role is not configured. Contact support.",
       forgotPassword: "Forgot password?",
-      resetLinkSent: "If the email exists, a password reset link has been sent.",
+      resetLinkSent:
+        "If the email exists, a password reset link has been sent.",
       resetFailed: "Could not send reset link right now. Please try again.",
       submit: "Continue",
       submitting: "Signing in...",
@@ -338,9 +341,12 @@ export const translations = {
         "Firebase कॉन्फ़िगर नहीं है। VITE_FIREBASE_* वैल्यू जोड़ें।",
       doctorOnlyError: "यह डॉक्टर खाता नहीं है।",
       patientOnlyError: "यह मरीज खाता नहीं है।",
+      doctorPendingApproval:
+        "डॉक्टर खाता अनुमोदन के लिए लंबित है। सत्यापन तक प्रतीक्षा करें।",
       roleMissing: "खाते की भूमिका सेट नहीं है। सहायता से संपर्क करें।",
       forgotPassword: "पासवर्ड भूल गए?",
-      resetLinkSent: "यदि ईमेल मौजूद है, तो पासवर्ड रीसेट लिंक भेज दिया गया है।",
+      resetLinkSent:
+        "यदि ईमेल मौजूद है, तो पासवर्ड रीसेट लिंक भेज दिया गया है।",
       resetFailed: "अभी रीसेट लिंक नहीं भेजा जा सका। कृपया फिर कोशिश करें।",
       submit: "आगे बढ़ें",
       submitting: "लॉगिन हो रहा है...",

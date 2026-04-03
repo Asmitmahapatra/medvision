@@ -4,10 +4,14 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import TopNav from './components/TopNav';
 import Dashboard from './components/Dashboard';
 import HealthBot from './components/HealthBot';
+import MultilingualHealthChat from './components/MultilingualHealthChat';
 import PatientDashboard from './components/PatientDashboard';
+import AppointmentBookingPage from './components/AppointmentBookingPage';
+import AppointmentsRecordsPage from './components/AppointmentsRecordsPage';
 import DoctorDashboard from './components/DoctorDashboard';
 import Login from './components/Login';
 import SignUp from './components/SignUp';
+import DoctorSignUp from './components/DoctorSignUp';
 import { translations } from './i18n';
 import { getAuthUser, logoutUser } from './services/authService';
 
@@ -75,6 +79,12 @@ function AppContent({ language, copy, onLanguageChange, authUser = null, onLogin
             }
           />
           <Route
+            path="/doctor-signup"
+            element={
+              authUser ? <Navigate to="/doctor" replace /> : <DoctorSignUp language={language} onLogin={onLogin} />
+            }
+          />
+          <Route
             path="/patient"
             element={(
               <ProtectedRoute isAuthenticated={Boolean(authUser)} userRole={authUser?.role}>
@@ -95,6 +105,114 @@ function AppContent({ language, copy, onLanguageChange, authUser = null, onLogin
             element={(
               <ProtectedRoute isAuthenticated={Boolean(authUser)} userRole={authUser?.role}>
                 <HealthBot copy={copy} />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/patient/book-appointment"
+            element={(
+              <ProtectedRoute isAuthenticated={Boolean(authUser)} userRole={authUser?.role}>
+                <AppointmentBookingPage
+                  doctors={[
+                    {
+                      id: 'doc-1',
+                      name: 'Dr. Meera Rao',
+                      department: 'General Medicine',
+                      experience: '12 years',
+                      hospital: 'District Health Center',
+                      availability: 'Mon-Sat, 9:00 AM - 5:00 PM',
+                      languages: 'English, Hindi',
+                      phone: '+91 90000 10001',
+                    },
+                    {
+                      id: 'doc-2',
+                      name: 'Dr. Ashok Yadav',
+                      department: 'Pediatrics',
+                      experience: '9 years',
+                      hospital: 'Community Care Unit',
+                      availability: 'Mon-Fri, 10:00 AM - 4:00 PM',
+                      languages: 'English, Hindi',
+                      phone: '+91 90000 10002',
+                    },
+                    {
+                      id: 'doc-3',
+                      name: 'Dr. Pooja Sharma',
+                      department: 'Obstetrics & Gynecology',
+                      experience: '10 years',
+                      hospital: 'Women Wellness Clinic',
+                      availability: 'Mon-Sat, 11:00 AM - 6:00 PM',
+                      languages: 'English, Hindi',
+                      phone: '+91 90000 10003',
+                    },
+                    {
+                      id: 'doc-4',
+                      name: 'Dr. Imran Khan',
+                      department: 'Cardiology',
+                      experience: '14 years',
+                      hospital: 'Heart Care Trust',
+                      availability: 'Tue-Sun, 8:00 AM - 2:00 PM',
+                      languages: 'English, Hindi, Urdu',
+                      phone: '+91 90000 10004',
+                    },
+                  ]}
+                  profile={{
+                    name: 'Sunita Devi',
+                    village: 'Bihara Khurd',
+                    ageGender: '36 / Female',
+                    language: 'hi',
+                  }}
+                  copy={copy}
+                  onBookingSubmit={() => {}}
+                />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/patient/health-records"
+            element={(
+              <ProtectedRoute isAuthenticated={Boolean(authUser)} userRole={authUser?.role}>
+                <AppointmentsRecordsPage
+                  appointments={[
+                    {
+                      id: 'appt-1',
+                      doctor: 'Dr. Meera Rao',
+                      speciality: 'General Medicine',
+                      notes: 'Fever, sore throat, body weakness',
+                      status: 'pending',
+                      scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                    },
+                  ]}
+                  records={[
+                    {
+                      id: 'rec-1',
+                      diagnosis: 'Mild viral infection',
+                      doctor: 'Dr. Meera Rao',
+                      department: 'General Medicine',
+                      date: '2026-03-28',
+                      symptoms: 'Cough and mild fever',
+                      prescription: 'Rest, warm fluids, paracetamol after food if fever is present',
+                      notes: 'Follow up if symptoms persist for more than 5 days',
+                    },
+                  ]}
+                  copy={copy}
+                  onReschedule={() => {}}
+                  onChatDoctor={() => {}}
+                />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/health-chat"
+            element={(
+              <ProtectedRoute isAuthenticated={Boolean(authUser)} userRole={authUser?.role}>
+                <MultilingualHealthChat
+                  copy={copy}
+                  language={language}
+                  onLanguageChange={onLanguageChange}
+                  userProfile={{
+                    name: authUser?.displayName || 'User',
+                  }}
+                />
               </ProtectedRoute>
             )}
           />

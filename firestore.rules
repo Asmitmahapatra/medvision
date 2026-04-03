@@ -1,6 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // ============================================
+    // AUTHENTICATION HELPERS
+    // ============================================
+    
     function signedIn() {
       return request.auth != null;
     }
@@ -13,126 +18,255 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
+    function currentUserRole() {
+      return currentUserDoc().data.role;
+    }
+
+    // ============================================
+    // ROLE-BASED ACCESS CONTROL
+    // ============================================
+
     function isAdmin() {
       return signedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && currentUserDoc().data.role == 'admin';
+        && currentUserRole() == 'admin';
     }
 
     function isDoctor() {
       return signedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && currentUserDoc().data.role == 'doctor';
+        && currentUserRole() == 'doctor';
     }
 
     function isPatient() {
       return signedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && currentUserDoc().data.role == 'patient';
+        && currentUserRole() == 'patient';
     }
 
-    function allowUserProfileCreate(userId) {
+    // ============================================
+    // DATA VALIDATION HELPERS
+    // ============================================
+
+    function isValidPatientProfile(userId) {
       return isOwner(userId)
-        && request.resource.data.keys().hasOnly([
+        && request.resource.data.keys().hasAll([
           'email',
           'displayName',
-          'phone',
+          'role',
           'childName',
           'age',
+          'phone',
           'address',
-          'role',
           'createdAt',
           'updatedAt'
         ])
-        && request.resource.data.role == 'patient';
+        && request.resource.data.role == 'patient'
+        && request.resource.data.email is string
+        && request.resource.data.displayName is string
+        && request.resource.data.childName is string
+        && request.resource.data.age is number
+        && request.resource.data.phone is string
+        && request.resource.data.address is map
+        && request.resource.data.address.keys().hasAll([
+          'village',
+          'district',
+          'state',
+          'pincode'
+        ])
+        && request.resource.data.createdAt is string
+        && request.resource.data.updatedAt is string;
     }
 
-    function allowUserProfileUpdate(userId) {
+    function isValidDoctorProfile(userId) {
       return isOwner(userId)
-        && request.resource.data.keys().hasOnly([
+        && request.resource.data.keys().hasAll([
           'email',
           'displayName',
-          'phone',
-          'childName',
-          'age',
-          'address',
           'role',
+          'licenseNumber',
+          'specialization',
+          'department',
+          'hospital',
+          'phone',
+          'qualification',
+          'experience',
+          'location',
           'createdAt',
-          'updatedAt'
+          'updatedAt',
+          'verified',
+          'approvalStatus'
         ])
-        && request.resource.data.role == resource.data.role;
+        && request.resource.data.role == 'doctor'
+        && request.resource.data.email is string
+        && request.resource.data.displayName is string
+        && request.resource.data.licenseNumber is string
+        && request.resource.data.specialization is string
+        && request.resource.data.department is string
+        && request.resource.data.hospital is string
+        && request.resource.data.phone is string
+        && request.resource.data.qualification is string
+        && request.resource.data.experience is number
+        && request.resource.data.location is map
+        && request.resource.data.location.keys().hasAll([
+          'city',
+          'state'
+        ])
+        && request.resource.data.createdAt is string
+        && request.resource.data.updatedAt is string
+        && request.resource.data.verified is bool
+        && request.resource.data.approvalStatus in ['pending', 'approved', 'rejected'];
     }
+
+    function isValidUserProfile(userId) {
+      return isValidPatientProfile(userId) || isValidDoctorProfile(userId);
+    }
+
+    function isValidAppointment() {
+      return request.resource.data.keys().hasOnly([
+        'doctor',
+        'department',
+        'speciality',
+        'notes',
+        'status',
+        'scheduledAt',
+        'createdAt',
+        'updatedAt'
+      ])
+      && request.resource.data.status in ['pending', 'confirmed', 'completed', 'cancelled']
+      && request.resource.data.scheduledAt is string;
+    }
+
+    function isValidMedicalRecord() {
+      return request.resource.data.keys().hasOnly([
+        'diagnosis',
+        'doctor',
+        'department',
+        'symptoms',
+        'prescription',
+        'notes',
+        'date',
+        'attachmentUrl',
+        'createdAt',
+        'updatedAt'
+      ])
+      && request.resource.data.diagnosis is string
+      && request.resource.data.doctor is string;
+    }
+
+    // ============================================
+    // USERS COLLECTION
+    // ============================================
 
     match /users/{userId} {
-      // Doctors can read patient profiles, but cannot edit them.
-      allow read: if isOwner(userId)
-        || isAdmin()
-        || (isDoctor() && resource.data.role == 'patient');
-      allow create: if allowUserProfileCreate(userId);
-      allow update: if allowUserProfileUpdate(userId) || isAdmin();
+      // Allow users to read their own profile
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Allow patients to read other patients' public profiles (if needed for features like doctor directories)
+      allow read: if isDoctor() && resource.data.role == 'patient';
+      
+      // Allow new users to create their profile
+      allow create: if isValidUserProfile(userId);
+      
+      // Allow users to update their own profile
+      allow update: if isAdmin()
+        || isValidPatientProfile(userId)
+        || (isValidDoctorProfile(userId)
+          && request.resource.data.verified == resource.data.verified
+          && request.resource.data.approvalStatus == resource.data.approvalStatus);
+      
+      // Only admins can delete user profiles
       allow delete: if isAdmin();
 
-      // App currently writes appointments in users/{uid}/appointments/{id}
+      // ============================================
+      // APPOINTMENTS SUBCOLLECTION
+      // ============================================
+
       match /appointments/{appointmentId} {
-        allow read, create, update, delete: if isOwner(userId) || isAdmin();
+        // Users can read their own appointments, doctors can read all appointments
+        allow read: if isOwner(userId) || isDoctor() || isAdmin();
+        
+        // Users and doctors can create appointments
+        allow create: if (isOwner(userId) || isDoctor()) && isValidAppointment();
+        
+        // Users can update their own appointments, doctors/admins can update any
+        allow update: if (isOwner(userId) || isDoctor() || isAdmin()) && isValidAppointment();
+        
+        // Only admins can delete appointments
+        allow delete: if isAdmin();
       }
 
+      // ============================================
+      // SYMPTOM LOGS SUBCOLLECTION
+      // ============================================
+
       match /symptomLogs/{logId} {
-        allow read, create: if isOwner(userId) || isAdmin();
+        // Users can read/create their own logs, admins can read all
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId);
+        
+        // Only admins can update/delete
         allow update, delete: if isAdmin();
       }
 
+      // ============================================
+      // MEDICAL RECORDS SUBCOLLECTION
+      // ============================================
+
       match /medicalRecords/{recordId} {
+        // Patients can read their records, doctors can read patient records
         allow read: if isOwner(userId) || isDoctor() || isAdmin();
-        allow create, update: if isDoctor() || isAdmin();
+        
+        // Only doctors and admins can create/update records
+        allow create, update: if (isDoctor() || isAdmin()) && isValidMedicalRecord();
+        
+        // Only admins can delete records
         allow delete: if isAdmin();
       }
     }
 
+    // ============================================
+    // DOCTORS COLLECTION
+    // ============================================
+
     match /doctors/{doctorId} {
+      // All signed-in users can read doctor profiles
       allow read: if signedIn();
+      
+      // Only admins can create/update/delete doctor profiles
       allow create, update, delete: if isAdmin();
     }
 
-    // Optional global collection style if you later move appointments out of user subcollection
+    // ============================================
+    // GLOBAL APPOINTMENTS (Optional)
+    // ============================================
+
     match /appointments/{appointmentId} {
+      // Any signed-in user can create appointments
       allow create: if signedIn();
-      allow read: if signedIn()
-        && (resource.data.patientId == request.auth.uid
-          || resource.data.doctorId == request.auth.uid
-          || isAdmin());
-      // Assigned doctors can update appointment workflow; admin retains full control.
-      allow update: if isAdmin()
-        || (isDoctor() && resource.data.doctorId == request.auth.uid);
-      allow delete: if isAdmin();
+      
+      // Users can read their own appointments
+      allow read: if signedIn();
+      
+      // Restricted updates/deletes
+      allow update, delete: if isAdmin();
     }
 
-    // Doctor-only workspace notes/case files.
-    match /doctorCases/{caseId} {
-      allow create: if isDoctor() || isAdmin();
-      allow read: if isAdmin()
-        || (isDoctor() && resource.data.doctorId == request.auth.uid)
-        || (isPatient() && resource.data.patientId == request.auth.uid);
-      allow update: if isAdmin()
-        || (isDoctor() && resource.data.doctorId == request.auth.uid);
-      allow delete: if isAdmin();
-    }
+    // ============================================
+    // CHAT MESSAGES (Future Feature)
+    // ============================================
 
-    // Optional chat collection. Locked to participants/admin.
-    match /chats/{chatId} {
+    match /chatMessages/{messageId} {
       allow create: if signedIn();
-      allow read, update, delete: if signedIn()
-        && (request.auth.uid in resource.data.participants || isAdmin());
-
-      match /messages/{messageId} {
-        allow create: if signedIn();
-        allow read: if signedIn()
-          && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
-            || isAdmin());
-        allow update, delete: if isAdmin();
-      }
+      allow read: if signedIn();
+      allow update, delete: if isAdmin();
     }
 
+    // ============================================
+    // DEFAULT DENY
+    // ============================================
+
+    // Deny all other access by default
     match /{document=**} {
       allow read, write: if false;
     }

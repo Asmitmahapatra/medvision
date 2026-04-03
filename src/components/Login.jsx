@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { AtSign, Loader2, LogIn, Lock, ShieldCheck, UserRound, UserCog, Sparkles, Eye, EyeOff } from 'lucide-react';
-import { isValidEmail, loginWithEmail, logoutUser, resetPasswordWithEmail, resolveUserRole } from '../services/authService';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
+import { AtSign, Loader2, LogIn, Lock, ShieldCheck, UserRound, UserCog, Eye, EyeOff } from 'lucide-react';
+import { getUserProfile, isValidEmail, loginWithEmail, logoutUser, resetPasswordWithEmail } from '../services/authService';
 
 const DEMO_ACCOUNTS = {
   patient: {
@@ -95,11 +95,18 @@ const Login = ({ copy, onLogin }) => {
       setIsSubmitting(true);
       setInfo('');
       const user = await loginWithEmail(normalized, password);
-      const resolvedRole = await resolveUserRole(user);
+      const profile = await getUserProfile(user);
+      const resolvedRole = profile?.role;
 
       if (!resolvedRole) {
         await logoutUser();
         setError(copy.login.roleMissing);
+        return;
+      }
+
+      if (resolvedRole === 'doctor' && profile?.verified !== true) {
+        await logoutUser();
+        setError(copy.login.doctorPendingApproval ?? 'Doctor account pending approval. Please wait for verification.');
         return;
       }
 
@@ -118,13 +125,15 @@ const Login = ({ copy, onLogin }) => {
       const resolvedUser = {
         ...user,
         role: resolvedRole,
+        verified: profile?.verified ?? null,
       };
       globalThis.localStorage?.setItem(AUTH_USER_KEY, JSON.stringify(resolvedUser));
 
       const hasProtectedSource = Boolean(location.state?.from?.pathname);
-      const targetPath = hasProtectedSource
-        ? fromPath
-        : (resolvedRole === 'doctor' ? '/doctor' : '/patient');
+      let targetPath = resolvedRole === 'doctor' ? '/doctor' : '/patient';
+      if (hasProtectedSource) {
+        targetPath = fromPath;
+      }
 
       onLogin(resolvedUser);
       navigate(targetPath, { replace: true });
@@ -401,6 +410,15 @@ const Login = ({ copy, onLogin }) => {
             Back to landing page
           </button>
 
+          <div className="mt-4 border-t border-slate-200 pt-4">
+            <p className="text-center text-xs text-slate-600">
+              Registering as a doctor?{' '}
+              <Link to="/doctor-signup" className="font-bold text-indigo-700 hover:text-indigo-800">
+                Doctor signup
+              </Link>
+            </p>
+          </div>
+
           <p className="text-center text-xs text-slate-500">{copy.login.footer}</p>
         </form>
         </section>
@@ -427,6 +445,7 @@ Login.propTypes = {
       firebaseConfigError: PropTypes.string.isRequired,
       doctorOnlyError: PropTypes.string.isRequired,
       patientOnlyError: PropTypes.string.isRequired,
+      doctorPendingApproval: PropTypes.string.isRequired,
       roleMissing: PropTypes.string.isRequired,
       forgotPassword: PropTypes.string.isRequired,
       resetLinkSent: PropTypes.string.isRequired,

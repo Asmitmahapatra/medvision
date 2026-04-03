@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle, MapPin, Phone, Baby, Loader2 } from 'lucide-react';
 import { auth, db } from '../services/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
@@ -586,6 +586,15 @@ const SignUp = ({ language = 'en', onLogin }) => {
               {signupCopy.loginCta}
             </button>
           </p>
+
+          <div className="mt-4 border-t border-slate-200 pt-4">
+            <p className="text-center text-sm text-gray-600">
+              Registering as a doctor?{' '}
+              <Link to="/doctor-signup" className="font-semibold text-indigo-700 hover:text-indigo-800">
+                Go to doctor signup
+              </Link>
+            </p>
+          </div>
         </section>
       </div>
     </main>
